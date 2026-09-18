@@ -2,37 +2,210 @@
 # Same conventions as afmis_schema.yaml (status/source/kpi_codes per field).
 #
 # Sources:
-#   PDF  = docs/Struktura_te_Dhenave_AFMIS_SIFQ.pdf
-#   XLSX = docs/Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx, sheet 07_SIFQ_Thesar
-#   KPI  = docs/KPI (komente)- Menaxhimi i investimeve publike (1).docx
+#   PDF     = docs/Struktura_te_Dhenave_AFMIS_SIFQ.pdf
+#   XLSX    = docs/Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx, sheet 07_SIFQ_Thesar
+#   KPI     = docs/KPI (komente)- Menaxhimi i investimeve publike (1).docx
+#   INTEGR  = docs/Manual_teknik_Integrimi_i_SPE_me_AFMIS.pdf ("Manual Teknik - Integrimi i
+#             Sistemit të Prokurimit Elektronik me AFMIS", 13 faqe) - the actual UI walkthrough
+#             of registering a tender dossier in SPE, confirming numri_transaksionit and
+#             kodi_institucioni as REAL, actively-validated fields (not just a proposal)
+#   UDHEZ   = docs/Udhezuesi_SIFQ_Moduli_Buxhetit_UB_Pagueshmeve.docx ("Udhëzuesi i
+#             Përdoruesit - Sistemi Informatik Financiar i Qeverisë") - the same guide also
+#             exists as a 263-page, ~42MB PDF (not committed here - repo-size tradeoff, see
+#             CLAUDE.md) covering more modules (AR, Fixed Assets, GL) than the docx does;
+#             "UDHEZ PDF p.N" citations below refer to that uncommitted PDF's page numbers -
+#             re-obtain it from the original source if those specific pages need re-checking.
+#             The docx's 22 real UI-field tables (Budget/PR/PO/AP modules) are cited as
+#             "UDHEZ docx Table N" and are fully committed/reproducible from this repo alone.
 
 system: SIFQ
 grain_note: >
-  SIFQ is at TRANSACTION grain (one row per commitment / invoice / payment), not
-  budget-line grain like AFMIS. This is the grain difference the task's rule 5 requires
+  SIFQ is at TRANSACTION grain (one row per requisition / commitment / invoice / payment),
+  not budget-line grain like AFMIS. This is the grain difference the task's rule 5 requires
   the AFMIS<->SIFQ link to account for - see external_link_keys below.
+
+platform_note: >
+  UDHEZ confirms SIFQ runs on Oracle E-Business Suite (the guide names "Oracle", "Flexfield",
+  "GoA [institution] PO Commitments" responsibilities, etc. directly) with a 12-segment
+  Accounting Flexfield: Entiteti Qeverisës, Ministria e Linjës, Institucioni (=Njësia
+  Shpenzuese), Kapitulli, Programi/Funksioni, Llogaria Ekonomike, Nën-Llogaria, Zyra e
+  Thesarit (TDO), Projekti, plus 3 more segments not captured in what we read. Real code
+  formats confirmed with worked examples (UDHEZ docx Table 1, PDF p.7-10):
+    - kodi_institucioni: 7 digits = {1 or 2 = Qendrore/Lokale}{3-digit ministry/local-gov
+      code}{3-digit sequential spending-unit code}, e.g. "1011001" (Ministria e Arsimit,
+      njësia shpenzuese 1), "2101001" (Bashkia Tiranë, njësia shpenzuese 1)
+    - kodi_projekti: 7 chars = {G=grant / K or L=credit-loan (source text is internally
+      inconsistent on this letter, see open question in struktura_sifq.md) / no-prefix for
+      domestic}{3-char ministry or local-gov code}{3 or 4-digit sequential}, e.g. "GM11001"
+    - numri_kerkeses (PR): "Kodi i Institucionit Buxhetor - Viti Aktual - Numër rendor"
+    - numri_kuponi (invoice coupon): "{kodi_institucioni}-{YY}{numër rendor}", e.g.
+      "1003001-1200025"
+
+platform_boundary_open_question: >
+  IMPORTANT - this session's earlier documents (PDF §2) state AFMIS is legally named "SIMF"
+  and is a system distinct from SIFQ. But UDHEZ - titled "Sistemi Informatik Financiar i
+  Qeverisë" (i.e. SIFQ itself) - documents a full "MODULI I BUXHETIT" covering "Detajimi
+  Fillestar i Buxhetit" (initial budget breakdown) and "Rishikimi i Buxhetit" (budget
+  revision) - functions this project's schema had attributed entirely to AFMIS. The
+  Integration Manual (INTEGR) also repeatedly refers to institutions accessing "sistemin SIMF
+  dhe SIFQ" together via one Web Portal, as if paired/twinned rather than fully independent.
+  This raises a real possibility that AFMIS/SIMF and SIFQ are far more tightly coupled (or
+  even the same underlying Oracle EBS platform under two names) than this project's rule-4
+  "always keep them separate" schema design assumes. Rule 4 is still followed here (SIFQ and
+  AFMIS schemas remain separate files/tables), but the budget-module entities below that come
+  from UDHEZ are kept on the SIFQ side specifically because that is the document's own title -
+  this is a modeling choice under genuine uncertainty, not a resolved fact. Flag this for the
+  system owners before treating the AFMIS/SIFQ boundary as settled.
 
 entities:
 
+  - name: kerkese_blerje
+    description_sq: "Kërkesa për Blerje / Vlera e Prokurimit (Purchase Requisition, PR) - momenti i identifikimit të nevojës dhe rezervimit (ngurtësimit) të fondeve, PARA se furnitori të dihet"
+    grain: "one row per purchase requisition"
+    primary_key: [numri_kerkeses]
+    fields:
+      - name: numri_kerkeses
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 7, field 'Numri': 'Numri i kërkesë blerjes, i cili përmban Kodin e Institucionit Buxhetor - Vitin Aktual - Numër rendor'"
+        kpi_codes: []
+      - name: njesia_operuese
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 7, field 'Njësia Operuese'"
+        kpi_codes: []
+      - name: pershkrimi
+        type: text
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 7 'Përshkrimi: Përshkrim mbi dokumentin që po krijohet'; UDHEZ PDF p.44 'Përshkrimi i PR'"
+        kpi_codes: []
+      - name: lloji
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 7 'Lloji: Lloji i dokumentit'"
+        kpi_codes: []
+      - name: statusi
+        type: enum [E_paperfunduar, Ne_proces, Refuzuar, Miratuar]
+        status: CONFIRMED_LOGICAL
+        source: >
+          UDHEZ docx Table 7 'Statusi': "E papërfunduar – Kërkesë Blerja nuk është aprovuar /
+          Në proces – ... në proces aprovimi / Refuzuar – ... nuk është aprovuar nga një
+          punonjës i vendosur në këtë Workflow / Miratuar – ... ka kaluar në procesin e
+          aprovimit dhe është aprovuar nga te gjithë punonjësit e vendosur në Workflow"
+        kpi_codes: []
+      - name: pergatitesi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 7 'Përgatitësi: Emri i punonjësit që regjistron transaksionin'"
+        kpi_codes: []
+      - name: kodi_projekti
+        type: string (FK -> AFMIS.projekt_investimi.kodi_projekti)
+        status: ASSUMED
+        source: >
+          Structural: UDHEZ's 12-segment Chart of Accounts includes a 'Projekti' dimension
+          used for "ekzekutimi i buxhetit (angazhimet, shpenzimet...)" - a PR is exactly such
+          an execution transaction - but no UDHEZ field table explicitly lists kodi_projekti
+          as a PR header field. Inferred from the flexfield design, not directly cited.
+        kpi_codes: []
+      - name: kodi_institucioni
+        type: string (FK -> AFMIS.institucioni.kodi_institucioni)
+        status: CONFIRMED_LOGICAL
+        source: "Implicit in numri_kerkeses's own format (embeds the institution code); UDHEZ docx Table 7 'Njësia Operuese'"
+        kpi_codes: []
+      - name: kategoria_mallrave_sherbimeve
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44: 'Kategoria e mallrave/shërbimeve të kërkuara'"
+        kpi_codes: []
+      - name: data
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44 PR field list: 'Data'"
+        kpi_codes: []
+      - name: njesia_matjes
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44 PR field list: 'Njësia e masës'"
+        kpi_codes: []
+      - name: sasia
+        type: numeric
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44 PR field list: 'Sasia'"
+        kpi_codes: []
+      - name: cmimi_per_njesi
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44 PR field list: 'Çmim për njësi'"
+        kpi_codes: []
+      - name: artikulli
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44 PR field list: 'Artikulli' (= Llogaria Ekonomike, niveli i Artikullit)"
+        kpi_codes: []
+      - name: kodi_klasifikimi_buxhetor
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.44 PR field list: 'Kodi i klasifikimit Buxhetor'"
+        kpi_codes: []
+      - name: totali
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 7 'Totali: Paraqet monedhën funksionale dhe shumën totale aktuale të Kërkesë-Blerjes'"
+        kpi_codes: []
+
   - name: angazhim_buxhetor
-    description_sq: "Angazhimi buxhetor (bllokim/rezervim fondesh kundrejt planit të Thesarit)"
-    grain: "one row per budget commitment"
+    description_sq: "Angazhimi buxhetor / Urdhëri i Blerjes-Kontrata (Purchase Order, PO) - momenti i kontraktimit të furnitorit"
+    grain: "one row per purchase order / contract"
     primary_key: [numri_angazhimit]
+    cardinality_note: >
+      CONFIRMED (UDHEZ PDF p.55): "Një Kontratë mund të lidhet vetëm me një Kërkesë për
+      Blerje. Ndërsa nga e njëjta kërkesë për blerje, mund të krijohen disa Kontrata/PO."
+      => numri_kerkeses_blerje is a real, MANDATORY FK (system refuses to register a PO
+      without an approved matching PR); the relationship is many angazhime : 1 kerkese_blerje.
+      Also confirmed: "Institucionet Buxhetore nuk mund të regjistrojnë një PO nëse në sistem
+      nuk ekziston e regjistruar dhe e aprovuar Vlera e Prokurimit (PR) përkatëse" and "Shuma
+      e kontratës/PO kontrollohet automatikisht në sistem kundrejt vlerës së PR" (automatic
+      value-ceiling enforcement against the PR, not just AFMIS budget).
     fields:
       - name: numri_angazhimit
         type: string
         status: CONFIRMED_LOGICAL
         source: "XLSX 07_SIFQ_Thesar row 1.0: 'Numri i angazhimit buxhetor ... Identifikuesi i entitetit' (link key = PO); PDF §3.5 'Angazhimi financiar', Çelësi: 'Kodi projektit + dokumenti financiar' (composite, see note)"
         kpi_codes: ["F4.2"]
+      - name: numri_kerkeses_blerje
+        type: string (FK -> kerkese_blerje.numri_kerkeses)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.55: 'Kontrata/PO-ja/Urdhëri i Blerjes duhet të regjistrohet kundrejt një Kërkese për Blerje ekzistuese' - see cardinality_note above"
+        kpi_codes: []
       - name: numri_kontrates
         type: string
         status: CONFIRMED_LOGICAL
         source: "XLSX 07_SIFQ_Thesar row 2.0: 'Numri i kontratës ... Çelësi SIFQ-SMK-SPE' (link key = PO)"
         kpi_codes: ["F4.2", "F4.3"]
+      - name: lloji_ub
+        type: enum [Standarte, e_Planifikuar]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ PDF p.55: 'Kontrata mund të ekzekutohet në faza të ndryshme (Urdhër i Blerjes i Planifikuar), ose mund të ekzekutohet e gjitha njëherësh (Urdhri i Blerjes Standart)'"
+        kpi_codes: []
+      - name: blerësi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 11 'Blerësi: vendoset automatikisht emri i personit që po punon për regjistrimin e Urdhërit të Blerjes'"
+        kpi_codes: []
+      - name: data_krijimit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 11 'Krijuar: data e sistemit vetvendoset si data e krijimit të dokumentit'"
+        kpi_codes: []
+      - name: statusi
+        type: enum [E_paperfunduar, Aprovuar, Kerkon_Riaprovim]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 11 'Statusi': E papërfunduar - Urdhëri nuk është aprovuar / Aprovuar - keni aprovuar Urdhërin / Kërkon Riaprovim - Urdhëri u aprovua por u ndryshua pas aprovimit"
+        kpi_codes: []
       - name: kodi_projekti
         type: string (FK -> AFMIS.projekt_investimi.kodi_projekti)
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 3.0: 'Kodi i projektit të investimit / llogaria ekonomike (230-231) ... Çelësi SIFQ-AFMIS' (link key = PO); PDF §3.4 'Projekti: lidhet me kodin e projektit në AFMIS'"
+        source: "XLSX 07_SIFQ_Thesar row 3.0: 'Kodi i projektit të investimit / llogaria ekonomike (230-231) ... Çelësi SIFQ-AFMIS' (link key = PO); PDF §3.4 'Projekti: lidhet me kodin e projektit në AFMIS'; UDHEZ confirms Projekti as a real Chart-of-Accounts Flexfield segment with a concrete code format (see platform_note) - raises confidence this key is real, but we still have no real AFMIS data to verify AFMIS's own kodi_projekti values use the same coding domain"
         kpi_codes: ["F4.3"]
       - name: kodi_llogarie_ekonomike
         type: string (230 or 231)
@@ -42,7 +215,7 @@ entities:
       - name: kodi_institucioni
         type: string (FK -> AFMIS.institucioni.kodi_institucioni)
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 4.0: 'Institucioni ... Grupimi' (link key = PO); PDF §3.4 'Institucioni: Njësia buxhetore që kryen transaksionin'"
+        source: "XLSX 07_SIFQ_Thesar row 4.0: 'Institucioni ... Grupimi' (link key = PO); PDF §3.4 'Institucioni: Njësia buxhetore që kryen transaksionin'; UDHEZ confirms real 7-digit format with worked examples (see platform_note)"
         kpi_codes: ["F4.3"]
       - name: nipt_perfituesit
         type: string
@@ -52,12 +225,12 @@ entities:
       - name: vlera_angazhuar
         type: numeric (Lekë)
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 6.0: 'Vlera e angazhuar ... Krahasimi angazhim kundrejt pagesë'"
+        source: "XLSX 07_SIFQ_Thesar row 6.0: 'Vlera e angazhuar ... Krahasimi angazhim kundrejt pagesë'; UDHEZ confirms this is automatically validated against kerkese_blerje.totali (cardinality_note)"
         kpi_codes: ["F4.2"]
       - name: statusi_aprovuar
         type: enum [Po, Jo]
         status: CONFIRMED_LOGICAL
-        source: "PDF §2.6/§3.7: 'Statusi Aprovuar ... Konfirmon disponueshmërinë e fondeve buxhetore'"
+        source: "PDF §2.6/§3.7: 'Statusi Aprovuar ... Konfirmon disponueshmërinë e fondeve buxhetore'; INTEGR p.10-13 confirms this is a REAL, actively-validated field in production - SPE will not accept a numri_transaksionit unless its SIMF/SIFQ status is exactly 'Aprovuar', and shows the literal error 'Nuk ka rezultate për kërkesën e dërguar' when it isn't"
         kpi_codes: []
       - name: periudha_muaji
         type: integer
@@ -72,27 +245,27 @@ entities:
       - name: kodi_ministrie_linje
         type: string
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.4 'Ministria e linjës'; PDF §3.2.ii 'Kodet e ministrive të linjës'"
+        source: "PDF §3.4 'Ministria e linjës'; PDF §3.2.ii 'Kodet e ministrive të linjës'; UDHEZ confirms as Flexfield segment 2"
         kpi_codes: []
       - name: kodi_kapitulli
         type: string
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.4 'Kapitulli'; PDF §3.2.iii 'Kodi i kapitullit'"
+        source: "PDF §3.4 'Kapitulli'; PDF §3.2.iii 'Kodi i kapitullit'; UDHEZ confirms as Flexfield segment ('Burimin e financimit (Kapitulli)')"
         kpi_codes: []
       - name: kodi_programi
         type: string (FK -> AFMIS.programi_buxhetor.kodi_programi)
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.4 'Programi'; PDF §3.2.iv"
+        source: "PDF §3.4 'Programi'; PDF §3.2.iv; UDHEZ confirms as Flexfield segment 'Funksioni/Programi' (5-char: 2 COFOG + 1 sub-functional + 2 program digits)"
         kpi_codes: []
       - name: kodi_entitet_qeverises
         type: string (qendrore/vendore/SHA)
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.4 'Entiteti qeverisës: Niveli i qeverisjes (qendrore/vendore/SHA)'; PDF §3.2.vi"
+        source: "PDF §3.4 'Entiteti qeverisës: Niveli i qeverisjes (qendrore/vendore/SHA)'; PDF §3.2.vi; UDHEZ confirms as Flexfield segment 1 (3-char: 000/001/003/004/local-gov-code)"
         kpi_codes: []
       - name: kodi_thesar_dege
         type: string
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.4 'Thesari: Dega e thesarit që procedon transaksionin'"
+        source: "PDF §3.4 'Thesari: Dega e thesarit që procedon transaksionin'; UDHEZ confirms as Flexfield segment 'TDO - Zyrë Thesari'"
         kpi_codes: []
       - name: kodi_tip_buxheti
         type: string
@@ -100,20 +273,82 @@ entities:
         source: "PDF §3.4 'Tipi i buxhetit: Klasifikim i llojit të fondit/burimit buxhetor'"
         kpi_codes: []
 
+  - name: leshimi
+    description_sq: "Lëshimi (skedulimi i kontratës) - marrja në dorëzim e mallit/shërbimit sipas një faze të kontratës me shumë faza; hapi ndërmjet PO-së dhe faturës"
+    grain: "one row per delivery/release schedule event against a PO"
+    primary_key: [numri_leshimi]
+    fields:
+      - name: numri_leshimi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'Leshimi: Moduli paraqet Numrin e Pasardhës të Lëshimit'"
+        kpi_codes: []
+      - name: numri_angazhimit
+        type: string (FK -> angazhim_buxhetor.numri_angazhimit)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'UB i Rishikuar: numrin e Urdhërit të Blerjes për Lëshimin që doni të krijoni'"
+        kpi_codes: []
+      - name: data_krijimit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'Krijuar: Regjistro Datën e Krijimit'"
+        kpi_codes: []
+      - name: furnitor_nipt
+        type: string (FK -> furnitor.nipt)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'Furnitori: të dhënat merren nga Urdhëri i Blerjes'"
+        kpi_codes: []
+      - name: statusi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'Statusi: Statusi i Lëshimit'"
+        kpi_codes: []
+      - name: monedha
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'Monedha'"
+        kpi_codes: []
+      - name: totali
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 13 'Totali: Shuma e UPB'"
+        kpi_codes: []
+
   - name: fature
-    description_sq: "Fatura — dokumenti që kërkon pagesë"
+    description_sq: "Fatura / Kërkesa për Pagesë — dokumenti që kërkon pagesë, i lidhur ose jo me një kontratë (UB)"
     grain: "one row per invoice"
     primary_key: [numri_fatures]
+    two_number_note: >
+      UDHEZ reveals numri_fatures and numri_kuponi are TWO DIFFERENT real fields, not one:
+      numri_fatures is the SUPPLIER's own invoice number ("Numri i faturës që ju ka dërguar
+      furnitori duhet të jetë i papërsëritshëm" - unique per supplier, not globally), while
+      numri_kuponi is the SIFQ-generated coupon/batch number (globally unique, format
+      "{kodi_institucioni}-{YY}{sequential}"). The XLSX/PDF sources this project started from
+      only named one "Numri i faturës" field - UDHEZ shows the real system actually has both.
     fields:
       - name: numri_fatures
         type: string
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 7.0: 'Numri i faturës ... Identifikuesi i faturës' (link key = PO)"
+        source: "XLSX 07_SIFQ_Thesar row 7.0: 'Numri i faturës ... Identifikuesi i faturës' (link key = PO); UDHEZ docx Table 17 'Numri i Faturës: numrin e faturës që ju ka dërguar furnitori... duhet të jetë i papërsëritshëm' PER SUPPLIER (see two_number_note)"
         kpi_codes: ["F4.2", "F4.4"]
+      - name: numri_kuponi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 17 'Kuponi: numri i kuponit përbëhet nga kodi i institucionit dhe nga një numër rendor ... Shembull 1003001-1200025' (see two_number_note)"
+        kpi_codes: []
       - name: numri_angazhimit
         type: string (FK -> angazhim_buxhetor.numri_angazhimit)
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.5 'Fatura', Çelësi: 'ID e dokumentit financiar + Kodi institucionit/projektit' (realized here via the commitment FK, since XLSX doesn't separately name a 'dokumenti financiar' id for this entity)"
+        source: "PDF §3.5 'Fatura', Çelësi: 'ID e dokumentit financiar + Kodi institucionit/projektit'; UDHEZ docx Table 17 'Përputh: fillon përputhjen me një PO/UB' - only applies when eshte_e_lidhur_me_kontrate is true"
+        kpi_codes: []
+      - name: eshte_e_lidhur_me_kontrate
+        type: boolean
+        status: CONFIRMED_LOGICAL
+        source: >
+          UDHEZ PDF p.82: "Institucionet do të kenë mundësinë të regjistrojnë dy lloje
+          kërkesash për pagesë/faturash: Fatura të palidhura me Kontratë/UB si për shembull
+          Pagat, Faturat e Utiliteve; Fatura të lidhura me Kontrata/UB si për shembull
+          Kontrata për shpenzime operative, Kontrata investimesh"
         kpi_codes: []
       - name: nivf_nslf
         type: string
@@ -123,24 +358,57 @@ entities:
       - name: data_fatures
         type: date
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 9.0: 'Data e faturës ... Fillimi i afatit 30-ditor sipas ligjit 48/2016'"
+        source: "XLSX 07_SIFQ_Thesar row 9.0: 'Data e faturës ... Fillimi i afatit 30-ditor sipas ligjit 48/2016'; UDHEZ PDF p.82 CONFIRMS a real enforced rule: 'Datat e Faturës nuk mund të jetë më e hershme se sa data e kontratës'"
         kpi_codes: ["F4.4"]
       - name: data_mberritjes_regjistrimit
         type: date
         status: CONFIRMED_LOGICAL
         source: "XLSX 07_SIFQ_Thesar row 10.0: 'Data e mbërritjes / regjistrimit ... Fillimi alternativ i afatit — duhet konfirmuar cila përdoret'"
         kpi_codes: ["F4.4"]
-        open_question: "Which date starts the Law 48/2016 30-day clock - data_fatures or this one? XLSX itself flags this as unresolved."
+        open_question: "Which date starts the Law 48/2016 30-day clock - data_fatures or this one? XLSX itself flags this as unresolved. UDHEZ does not resolve it either - it only confirms data_fatures cannot precede the contract date, a different rule."
       - name: vlera_fatures
         type: numeric (Lekë)
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 11.0: 'Vlera e faturës ... Numëruesi i KPI F4.2'"
+        source: "XLSX 07_SIFQ_Thesar row 11.0: 'Vlera e faturës ... Numëruesi i KPI F4.2'; UDHEZ PDF p.82 confirms real enforced rule: 'Sasitë dhe çmimi për njësi i Kontratës/UB nuk mund të tejkalohet nga sasitë dhe çmimi për njësi i faturës'"
         kpi_codes: ["F4.2"]
       - name: statusi
         type: enum [pranuar, refuzuar]
         status: CONFIRMED_LOGICAL
         source: "XLSX 07_SIFQ_Thesar row 12.0: 'Statusi i faturës ... Pranuar/refuzuar. KPI F4.2 kërkon shprehimisht statusin e verifikuar në SIFQ'; PDF §3.5 'me status pranuar/refuzuar'"
         kpi_codes: ["F4.2"]
+        open_question: >
+          UDHEZ shows the REAL system's invoice status is not a simple pranuar/refuzuar - it
+          is three separate fields (see statusi_real_i_sistemit, statusi_miratimit,
+          kontabilizuar below), where "Refuzuar" is actually a value of statusi_miratimit, not
+          of this field. XLSX's "pranuar/refuzuar" looks like a simplified gloss written for
+          the KPI spec, not a literal field name. This field is KEPT as-is (it's what F4.2's
+          source literally cites), but F4.2 in practice most likely maps to
+          statusi_miratimit = 'Miratuar' rather than to this field's values.
+      - name: statusi_real_i_sistemit
+        type: enum [E_Vleftesuar, Anulluar, Kerkon_Rivleftesim, E_papaguar]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 18 'Statusi i Faturës': E Vlerësuar (fondet kontrolluar/rezervuar) / Anulluar / Kërkon Rivlerësim / E papaguar - see open_question on `statusi` above"
+        kpi_codes: []
+      - name: statusi_miratimit
+        type: enum [Nuk_Kerkohet, Kerkohet, Fillo_Miratimin, Miratuar, Refuzuar, Kerkon_Rimiratim]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 18 'Statusi i Miratimit': Nuk Kërkohet / Kërkohet / Fillo Miratimin / Miratuar / Refuzuar / Kërkon Rimiratim - the field that actually carries 'Refuzuar', not `statusi`"
+        kpi_codes: []
+      - name: kontabilizuar
+        type: enum [Po, Pjesshem, Jo]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 18 'Kontabilizuar': Po (transferuar në LM me bazë accrual DHE cash, pra paguar) / Pjesshëm (vetëm accrual) / Jo (ende e patransferuar)"
+        kpi_codes: []
+      - name: statusi_rezervimit_planit_thesarit
+        type: enum [D_Deshtoi, R_Kaloi]
+        status: CONFIRMED_LOGICAL
+        source: >
+          UDHEZ PDF p.89-90: a SECOND, SEPARATE validation stage from budget approval - after
+          an invoice is approved, a daily automated job ("GoA: Rezervimi i fondeve të planit
+          të thesarit") reserves funds against the Treasury's cash plan (liquidity), distinct
+          from the annual-budget check done at registration. D=Dështoi (failed), R=Kaloi
+          (passed). Unpaid invoices get funds de-reserved automatically the next day.
+        kpi_codes: []
       - name: data_ndryshimit_statusit
         type: date
         status: CONFIRMED_LOGICAL
@@ -149,22 +417,38 @@ entities:
       - name: arsyeja_refuzimit
         type: text
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 14.0: 'Arsyeja e refuzimit' (NICE-TO-HAVE)"
+        source: "XLSX 07_SIFQ_Thesar row 14.0: 'Arsyeja e refuzimit' (NICE-TO-HAVE); UDHEZ PDF p.88-89 confirms Treasury's final approver can 'refuzoje... duke shpjeguar motivin e refuzimit'"
         kpi_codes: ["F4.4"]
       - name: furnitor_nipt
-        type: string (FK -> Supplier)
+        type: string (FK -> furnitor.nipt)
         status: CONFIRMED_LOGICAL
         source: "PDF §3.4 'Supplier (Furnitori): Subjekti furnizues, i lidhur me NIPT nga DPT'"
+        kpi_codes: []
+      - name: numri_furnitorit
+        type: string (FK -> furnitor.numri_furnitorit)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 17 'Numri i Furnitorit: Numri i furnitorit në sistem. Vendoset nga sistemi në momentin që zgjidhet furnitori'"
         kpi_codes: []
       - name: kodi_lloj_fature
         type: string (mall/sherbim/pune)
         status: CONFIRMED_LOGICAL
         source: "PDF §3.4 'Fatura sipas lloji: Kategorizimi i faturës (mall/shërbim/punë etj.)'"
         kpi_codes: []
+      - name: kushtet_pageses_dite
+        type: integer (days)
+        status: CONFIRMED_LOGICAL
+        source: >
+          UDHEZ docx Table 17 'Kushtet: Numri i ditëve nga momenti i regjistrimit të saj në
+          sistem brenda të cilave duhet të realizohet pagesa e faturës tek furnitori
+          përkatës'. NOTE: this appears to be the SAME real-world concept as
+          pagese.afati_aplikueshem_dite (XLSX row 19.0), but the two sources place it on
+          different entities (UDHEZ: invoice header field; XLSX: payment entity field). Both
+          are kept, cross-referenced, rather than silently picking one.
+        kpi_codes: ["F4.4"]
 
   - name: pagese
     description_sq: "Pagesa — ekzekutimi real i pagesës nga Thesari"
-    grain: "one row per payment order"
+    grain: "one row per payment"
     primary_key: [numri_urdherit_shpenzimit]
     fields:
       - name: numri_urdherit_shpenzimit
@@ -177,6 +461,16 @@ entities:
         status: CONFIRMED_LOGICAL
         source: "PDF §3.5 'Urdhër-shpenzimi / Pagesa', Çelësi: 'ID pagesë + ID faturë'"
         kpi_codes: []
+      - name: menyra_pageses
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 19 'Menyra e Pagesës: Elektronike. Një file elektronik që gjeneron programi për pagesat dhe që transferohet në bankë'"
+        kpi_codes: []
+      - name: numri_dokumentit_pageses
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 19 'Numri i Dokumentit: Numri i dokumentit të Pagesës, p.sh. numri i çekut'"
+        kpi_codes: []
       - name: data_urdherit_shpenzimit
         type: date
         status: CONFIRMED_LOGICAL
@@ -185,17 +479,22 @@ entities:
       - name: data_ekzekutimit_pageses
         type: date
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 17.0: 'Data e ekzekutimit të pagesës nga thesari ... KPI F4.3 kërkon pagesat e kryera faktikisht, jo thjesht të urdhëruara'; PDF §3.5 lifecycle step 5 'Disbursimi real (regjistrohet data e pagesës)'"
+        source: "XLSX 07_SIFQ_Thesar row 17.0: 'Data e ekzekutimit të pagesës nga thesari ... KPI F4.3 kërkon pagesat e kryera faktikisht, jo thjesht të urdhëruara'; PDF §3.5 lifecycle step 5; UDHEZ docx Table 19 'Data e Pagesës: Data duhet të jetë në një periudhë të hapur kontabël'"
         kpi_codes: ["F4.3", "F4.4"]
       - name: vlera_paguar_faktikisht
         type: numeric (Lekë)
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 18.0: 'Vlera e paguar faktikisht ... Numëruesi i KPI F4.3'"
+        source: "XLSX 07_SIFQ_Thesar row 18.0: 'Vlera e paguar faktikisht ... Numëruesi i KPI F4.3'; UDHEZ docx Table 19 'Shuma e Pagesës'"
         kpi_codes: ["F4.3"]
+      - name: anulluar
+        type: boolean
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 19 'Anullo: Moduli aktivizon këtë kuti nëse keni anulluar pagesën'; UDHEZ PDF p.92 confirms cancelled payments release the invoice's treasury-plan hold again"
+        kpi_codes: []
       - name: afati_aplikueshem_dite
         type: integer (days)
         status: CONFIRMED_LOGICAL
-        source: "XLSX 07_SIFQ_Thesar row 19.0: 'Afati i aplikueshëm i pagesës (ditë) ... 30 ditë sipas ligjit 48/2016, ose afati kontraktor nëse ndryshon'"
+        source: "XLSX 07_SIFQ_Thesar row 19.0: 'Afati i aplikueshëm i pagesës (ditë) ... 30 ditë sipas ligjit 48/2016, ose afati kontraktor nëse ndryshon' - see fature.kushtet_pageses_dite cross-reference note"
         kpi_codes: ["F4.4"]
 
   - name: dokument_shpenzimi
@@ -215,19 +514,30 @@ entities:
         kpi_codes: []
 
   - name: furnitor
-    description_sq: "Furnitori / Supplier"
+    description_sq: "Furnitori / Supplier - regjistrim i centralizuar në nivel Thesari, jo krijueshëm nga institucionet vetë"
     grain: "one row per supplier (by NIPT)"
     primary_key: [nipt]
+    centralization_note: >
+      CONFIRMED (UDHEZ PDF p.55): "Institucionet Buxhetore nuk do të lejohen të krijojnë,
+      ndryshojnë asnjë informacion furnitori në sistem. Regjistrimi i furnitorëve do të jetë
+      i centralizuar në nivel Thesari" - new suppliers require an external (outside-system)
+      request process to the Treasury, described in budget-execution instructions not read
+      as part of this project.
     fields:
       - name: nipt
         type: string
         status: CONFIRMED_LOGICAL
         source: "PDF §3.3: 'Të dhëna tatimore (nga DPT): NIPT dhe të dhëna identifikuese të subjektit/institucionit'"
         kpi_codes: []
+      - name: numri_furnitorit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 17 'Numri i Furnitorit: Numri i furnitorit në sistem' - a system-assigned identifier distinct from NIPT"
+        kpi_codes: []
       - name: emertimi
         type: string
         status: ASSUMED
-        source: "Structural: a supplier record needs a name; PDF names NIPT as the identifying field only"
+        source: "Structural: a supplier record needs a name; PDF names NIPT as the identifying field only (UDHEZ docx Table 17 'Furnitori: Emri i furnitorit qe do paguhet' confirms a name field exists, upgrading this from pure ASSUMED, but the exact underlying storage is not documented)"
         kpi_codes: []
       - name: iban
         type: string
@@ -237,12 +547,106 @@ entities:
       - name: numri_llogarise_bankare
         type: string
         status: CONFIRMED_LOGICAL
-        source: "PDF §3.3, same cell"
+        source: "PDF §3.3, same cell; UDHEZ docx Table 17 'Siti: Adresa e sitit të furnitorit që do dërgoni pagesën' confirms suppliers can have multiple bank-account 'sites'"
         kpi_codes: []
       - name: adresa_bankes
         type: string
         status: CONFIRMED_LOGICAL
         source: "PDF §3.3, same cell"
+        kpi_codes: []
+
+  - name: rishikim_buxhetor
+    description_sq: >
+      Rishikimi Buxhetor (Transferimet) - modul brenda "MODULI I BUXHETIT" të SIFQ (jo AFMIS -
+      shih platform_boundary_open_question në krye të skedarit). Ndryshon tavanin/detajimin e
+      buxhetit pas miratimit fillestar.
+    grain: "one row per budget revision transaction"
+    primary_key: [numri_rishikimit]
+    fields:
+      - name: numri_rishikimit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Numri i Rishikimit: numër që i jepet automatikisht nga sistemi pasi transaksioni ruhet'"
+        kpi_codes: []
+      - name: grupi_buxhetit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Grupi i Buxhetit: grupi i buxhetit ku behet rishikimi'"
+        kpi_codes: []
+      - name: lloji_burimit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Lloji i Burimit: lloji i burimit të buxhetit ku kryhet rishikimi'"
+        kpi_codes: []
+      - name: lloji_transaksionit
+        type: enum [Rregullim, Transferim, Rishikim]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Lloji i Transaksionit: lloji i rishikimit që kërkohet: Rregullim, Transferim, Rishikim'"
+        kpi_codes: []
+      - name: kerkuesi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Kërkuesi: identifikimi i përdoruesit që krijon rishikimin'"
+        kpi_codes: []
+      - name: justifikimi
+        type: text
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Justifikimi: arsyeja për të cilën kërkohet rishikimi'"
+        kpi_codes: []
+      - name: i_perhershem
+        type: boolean
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Përhershëm: nëse zgjidhet, rishikimi është i përhershëm'"
+        kpi_codes: []
+      - name: llogaria
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Llogaria: kombinimet e kodeve të llogarive'"
+        kpi_codes: []
+      - name: periudha
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Periudha: periudha kontabël e LM'"
+        kpi_codes: []
+      - name: buxheti_fillestar
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Buxheti Fillestar: shumat e buxhetit të postuara në LM'"
+        kpi_codes: []
+      - name: buxheti_aktual
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Buxheti Aktual: balanca e fundit e buxhetit që reflekton të gjitha rishikimet e aprovuara'"
+        kpi_codes: ["F1.1", "F1.2", "F5.1"]
+      - name: rrit_pakeso
+        type: enum [Rrit, Pakeso]
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Rrit/Pakëso: tregon nëse ndryshimi është në shtim apo pakësim'"
+        kpi_codes: []
+      - name: perqindja
+        type: numeric
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 '%: përqindja e shtimit apo pakësimit'"
+        kpi_codes: []
+      - name: shuma
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Shuma: shuma e ndryshimit për periudhën'"
+        kpi_codes: []
+      - name: buxheti_i_rishikuar
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Buxheti i Rishikuar: buxheti faktik me shumën e rishikuar'"
+        kpi_codes: []
+      - name: statusi_kontroll_fondeve
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Statusi Kontroll Fonde: statusi i verifikimit të fondeve'"
+        kpi_codes: []
+      - name: niveli_kontroll_fondeve
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "UDHEZ docx Table 3 'Niveli Kontroll Fonde: rezultati i verifikimit të fondeve'"
         kpi_codes: []
 
 # ---------------------------------------------------------------------------
@@ -257,12 +661,27 @@ external_link_keys:
       XLSX 07_SIFQ_Thesar row 3.0 ("Kodi i projektit / llogaria ekonomike (230-231) ...
       Çelësi SIFQ-AFMIS"), XLSX 09_Celesat row 7.0 ("SIFQ -> AFMIS | Kodi i projektit/
       llogaria ekonomike 230-231 | fallback: Institucion + program buxhetor + vit").
+      UDHEZ raises confidence in the *shape* of this key (kodi_institucioni and kodi_projekti
+      are both real Oracle Flexfield segments with concrete, documented code formats - see
+      platform_note) but does NOT supply real AFMIS data to verify against, so status is
+      unchanged from CONFIRMED_LOGICAL_AS_COMPOSITE_NOT_AS_PK.
     status: CONFIRMED_LOGICAL_AS_COMPOSITE_NOT_AS_PK
     grain_warning: >
       SIFQ (angazhim_buxhetor) is at transaction grain; AFMIS (vlera_buxhetore_projekti) is
       at project-year grain. Joining requires aggregating SIFQ transactions up to
       (kodi_projekti, viti) before comparing to an AFMIS budget-line row - a 1:many
       relationship, not 1:1.
+  - name: sifq_to_spe_transaction_number
+    fields: [numri_transaksionit]
+    source: >
+      UPGRADED from NOT_CONFIRMED_FILLED. INTEGR (Manual Teknik, p.10-13) walks through the
+      real SPE UI: before starting a procurement procedure, the procurement unit must obtain
+      the "numrin e transaksionit të kërkesë blerjes" already registered and APPROVED in
+      SIMF/SIFQ; SPE validates it live (shows "Ju duhet të vendosni një vlerë për fushën Numri
+      i transaksionit" if blank, "Nuk ka rezultate për kërkesën e dërguar" if invalid). This
+      is a real, actively-enforced production field, not a documentation proposal - though we
+      still have no real data samples to see its actual values or fill-rate in practice.
+    status: CONFIRMED_ACTIVELY_VALIDATED_IN_PRODUCTION_NO_SAMPLE_DATA
   - name: sifq_to_smk_spe
     fields: [numri_kontrates]
     source: "XLSX 07_SIFQ_Thesar row 2.0 'Çelësi SIFQ-SMK-SPE'; XLSX 09_Celesat row 6.0: 'SMK -> SIFQ | Numri i kontratës | fallback: NIPT i kontraktorit + numri i angazhimit'"

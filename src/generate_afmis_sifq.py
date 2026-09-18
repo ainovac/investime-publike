@@ -13,11 +13,15 @@ IMPORTANT - what this does NOT do, and why (see docs/afmis/struktura_afmis.md an
 docs/sifq/struktura_sifq.md "Gaps" sections for the full reasoning):
 
   - Does not generate programi_buxhetor, tavan_buxhetor, deklarata_politikes_programit,
-    tregues_performance, emp_anetar, roli_perdoruesi, zeri_ekonomik_230_231 (AFMIS) or
-    dokument_shpenzimi's relationship being resolved (SIFQ). None of these were part of
-    the real-data-backbone flow the user described for Step 3; fabricating them would mean
-    inventing a budget-program hierarchy with no real anchor. kodi_programi is left null
+    tregues_performance, emp_anetar, roli_perdoruesi, zeri_ekonomik_230_231 (AFMIS), or
+    kerkese_blerje, leshimi, rishikim_buxhetor (SIFQ - added to the schema in the second
+    session from UDHEZ/INTEGR, but none are tied to a KPI code either). None of these were
+    part of the real-data-backbone flow the user described for Step 3; fabricating them
+    would mean inventing structure with no real anchor. kodi_programi is left null
     everywhere (it's a NICE-TO-HAVE field per XLSX 02_AFMIS row 7, not MUST).
+    kerkese_blerje.numri_kerkeses is a partial exception: angazhim_buxhetor.numri_kerkeses_blerje
+    is populated (UDHEZ confirms this FK is mandatory) even though the kerkese_blerje table
+    itself isn't generated - see build_sifq_chain.
   - There is NO real link between a specific procurement procedure (app_notices) and a
     specific contract award (app_realizations) - Regjistri i Realizimeve has no ref_no
     (confirmed by inspection, user decided against forced/probabilistic matching). So the
@@ -237,12 +241,17 @@ def build_afmis_projects(app_notices, institucioni_map):
 
         if pd.notna(fund_limit) and fund_limit >= OBP_THRESHOLD_ALL:
             send_date = row["open_datetime"] - timedelta(days=int(rng.integers(5, 30)))
+            # numri_transaksionit format follows UDHEZ's confirmed PR-number convention
+            # (kodi_institucioni-viti-numer_rendor) since INTEGR describes it as the SAME
+            # transaction number registered in SIMF/SIFQ that SPE validates against.
+            numri_transaksionit = f"{kodi_inst}-{viti}-{pid:06d}" if pd.notna(kodi_inst) else pd.NA
             obp_rows.append({
                 "kodi_projekti": kodi_projekti,
                 "referenca_kerkeses_obp": f"REQ-{pid:06d}",
                 "statusi_kerkeses": "Aprovuar",
                 "data_dergimit_kerkeses": send_date,
                 "numri_procedures_prokurimit": row["ref_no"],
+                "numri_transaksionit": numri_transaksionit,
             })
 
     return (
@@ -293,9 +302,10 @@ def add_never_procured_projects(projects_df, budget_df, institucioni_df, rate):
 def build_furnitor(app_realizations):
     suppliers = app_realizations.dropna(subset=["winner_nipt"]).drop_duplicates("winner_nipt")
     rows = []
-    for _, r in suppliers.iterrows():
+    for i, (_, r) in enumerate(suppliers.iterrows(), start=1):
         rows.append({
             "nipt": r["winner_nipt"],
+            "numri_furnitorit": f"FURN-{i:06d}",  # UDHEZ: system-assigned, distinct from NIPT
             "emertimi": r["winner_name"],
             "iban": "AL" + "".join(str(int(rng.integers(0, 10))) for _ in range(26)),
             "numri_llogarise_bankare": str(rng.integers(10**9, 10**10 - 1)),
@@ -377,13 +387,20 @@ def build_sifq_chain(projects_df, obp_df, app_notices, app_realizations, furnito
 
     kodi_projekti_to_ref_no = dict(zip(obp_df["kodi_projekti"], obp_df["numri_procedures_prokurimit"]))
     proj_lookup = projects_df.set_index("kodi_projekti")
+    nipt_to_numri_furnitori = dict(zip(furnitor_df["nipt"], furnitor_df["numri_furnitorit"]))
 
     angazhime, dokumente, faturat, pagesat, truth_rows = [], [], [], [], []
-    aid = fid = pid_ = did = 1
+    kid = aid = fid = pid_ = did = 1
 
     for kodi_projekti, real in pairs:
         proj = proj_lookup.loc[kodi_projekti]
         signing_proxy = real["procurement_date"]  # best available real proxy - see module docstring
+
+        # kerkese_blerje (PR) - UDHEZ: a PO cannot be registered without an approved PR;
+        # not generated as its own output table (no KPI ties it - see module docstring),
+        # but a numri_kerkeses is still needed as angazhim_buxhetor's mandatory FK.
+        numri_kerkeses = f"{proj['kodi_institucioni']}-{signing_proxy.year}-{kid:06d}"
+        kid += 1
 
         numri_angazhimit = f"ANG-{aid:07d}"
         id_dokumenti = f"DOC-{did:07d}"
@@ -396,7 +413,12 @@ def build_sifq_chain(projects_df, obp_df, app_notices, app_realizations, furnito
 
         angazhime.append({
             "numri_angazhimit": numri_angazhimit,
+            "numri_kerkeses_blerje": numri_kerkeses,
             "numri_kontrates": numri_kontrates,
+            "lloji_ub": rng.choice(["Standarte", "e_Planifikuar"], p=[0.7, 0.3]),
+            "blerësi": f"Blerës {rng.integers(1, 200)}",
+            "data_krijimit": clip_to_today(pd.Timestamp(signing_proxy)),
+            "statusi": "Aprovuar",
             "kodi_projekti": kodi_projekti,
             "kodi_llogarie_ekonomike": proj["kodi_llogarie_ekonomike"],
             "kodi_institucioni": proj["kodi_institucioni"],
@@ -425,6 +447,7 @@ def build_sifq_chain(projects_df, obp_df, app_notices, app_realizations, furnito
             if cursor.date() > TODAY:
                 break
             numri_fatures = f"FAT-{fid:07d}"
+            numri_kuponi = f"{proj['kodi_institucioni']}-{cursor.year % 100:02d}{fid:05d}"
             fid += 1
             nivf = f"NIVF-{rng.integers(10**9, 10**10 - 1)}"
             data_fatures = clip_to_today(cursor)
@@ -436,16 +459,24 @@ def build_sifq_chain(projects_df, obp_df, app_notices, app_realizations, furnito
 
             faturat.append({
                 "numri_fatures": numri_fatures,
+                "numri_kuponi": numri_kuponi,
                 "numri_angazhimit": numri_angazhimit,
+                "eshte_e_lidhur_me_kontrate": True,  # this generator only produces PO-matched invoices
                 "nivf_nslf": nivf,
                 "data_fatures": data_fatures,
                 "data_mberritjes_regjistrimit": data_mberritjes,
                 "vlera_fatures": vlera_fatures,
                 "statusi": statusi,
+                "statusi_real_i_sistemit": "Kerkon_Rivleftesim" if rejected else "E_Vleftesuar",
+                "statusi_miratimit": "Refuzuar" if rejected else "Miratuar",
+                "kontabilizuar": "Jo" if rejected else "Pjesshem",  # upgraded to "Po" below once paid
+                "statusi_rezervimit_planit_thesarit": pd.NA if rejected else "R_Kaloi",
                 "data_ndryshimit_statusit": data_ndryshimit,
                 "arsyeja_refuzimit": rng.choice(REJECTION_REASONS) if rejected else pd.NA,
                 "furnitor_nipt": real["winner_nipt"],
+                "numri_furnitorit": nipt_to_numri_furnitori.get(real["winner_nipt"]),
                 "kodi_lloj_fature": lloj_fature,
+                "kushtet_pageses_dite": LEGAL_PAYMENT_DAYS,
             })
 
             payment_row = None
@@ -459,12 +490,16 @@ def build_sifq_chain(projects_df, obp_df, app_notices, app_realizations, furnito
                 exec_date = clip_to_today(max(exec_date, order_date))
                 numri_urdher = f"URDH-{pid_:07d}"
                 pid_ += 1
+                faturat[-1]["kontabilizuar"] = "Po"  # accrual + cash both posted once paid, per UDHEZ
                 payment_row = {
                     "numri_urdherit_shpenzimit": numri_urdher,
                     "numri_fatures": numri_fatures,
+                    "menyra_pageses": "Elektronike",
+                    "numri_dokumentit_pageses": f"DOK-{pid_:07d}",
                     "data_urdherit_shpenzimit": order_date,
                     "data_ekzekutimit_pageses": exec_date,
                     "vlera_paguar_faktikisht": vlera_fatures,
+                    "anulluar": False,
                     "afati_aplikueshem_dite": LEGAL_PAYMENT_DAYS,
                 }
                 pagesat.append(payment_row)

@@ -7,9 +7,12 @@
 #              "ALL" means the source literally wrote "Të gjitha" without enumerating.
 #
 # Sources:
-#   PDF  = docs/Struktura_te_Dhenave_AFMIS_SIFQ.pdf
-#   XLSX = docs/Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx, sheet 02_AFMIS
-#   KPI  = docs/KPI (komente)- Menaxhimi i investimeve publike (1).docx
+#   PDF     = docs/Struktura_te_Dhenave_AFMIS_SIFQ.pdf
+#   XLSX    = docs/Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx, sheet 02_AFMIS
+#   KPI     = docs/KPI (komente)- Menaxhimi i investimeve publike (1).docx
+#   INTEGR  = docs/Manual_teknik_Integrimi_i_SPE_me_AFMIS.pdf - the real SPE UI walkthrough for
+#             registering a tender dossier, confirming numri_transaksionit/kodi_institucioni as
+#             actively-validated production fields (see kerkesa_obp and external_link_keys below)
 
 system: AFMIS
 grain_note: >
@@ -182,6 +185,19 @@ entities:
         status: CONFIRMED_LOGICAL
         source: "XLSX 02_AFMIS row 18.0: 'Numri i procedurës së prokurimit (nëse ruhet në AFMIS) ... Nëse ekziston, lidhja AFMIS-SPE është e drejtpërdrejtë' (link key = PO)"
         kpi_codes: ["F1.2", "F5.2"]
+      - name: numri_transaksionit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: >
+          INTEGR (Manual Teknik, p.10-13): "numrin e transaksionit të kërkesë blerjes
+          (urdhërit të prokurimit) ... regjistruar dhe aprovuar paraprakisht në sistemin SIMF
+          dhe SIFQ" - required, mandatory field on the SPE tender-dossier form, validated
+          live against SIMF/SIFQ (status must be "Aprovuar"). Confirmed as a REAL, actively-
+          enforced production field via the actual UI flow and its error messages, not just
+          a documentation proposal - upgraded from the XLSX-only citation this field would
+          otherwise have. Only required for procedures >= 1,000,000 ALL (same threshold as
+          kerkesa_obp itself, independently confirmed twice: PDF §2.6 and INTEGR p.3/p.11).
+        kpi_codes: []
 
   - name: tavan_buxhetor
     description_sq: "Tavani buxhetor (kufiri i shpenzimeve për program-vit, indikativ ose i pandryshueshëm)"
@@ -338,6 +354,17 @@ external_link_keys:
     fields: [kodi_projekti]
     source: "XLSX 09_Celesat row 3.0: 'AFMIS -> APP/SPE (direkt) | Kodi i projektit i bartur në SPE | Nëpërmjet OBP (lidhjet 1+2)'"
     status: NOT_CONFIRMED_FILLED
+  - name: afmis_to_spe_transaction_number
+    fields: [numri_transaksionit, kodi_institucioni]
+    source: >
+      UPGRADED from NOT_CONFIRMED_FILLED. INTEGR (Manual Teknik, p.3-13) documents the real,
+      live SPE UI flow: before starting a procedure, the procurement unit must obtain
+      numri_transaksionit already registered+approved in SIMF/SIFQ, and enter both it and
+      kodi_institucioni on the tender-dossier form; SPE performs a live validation call and
+      shows literal errors ("Ju duhet të vendosni një vlerë...", "Nuk ka rezultate për
+      kërkesën e dërguar") when missing/invalid. This is real, actively-enforced production
+      behavior - not a documentation proposal - though we still have no sample real values.
+    status: CONFIRMED_ACTIVELY_VALIDATED_IN_PRODUCTION_NO_SAMPLE_DATA
   - name: afmis_to_sifq_composite
     fields: [viti_fiskal, kodi_institucioni, kodi_programi, kodi_projekti, kodi_llogarie_ekonomike]
     source: >

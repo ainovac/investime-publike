@@ -8,6 +8,9 @@ Burimet e lejuara:
 - **PDF** = `Struktura_te_Dhenave_AFMIS_SIFQ.pdf` (I4A, Shtator 2026)
 - **XLSX** = `Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx`, fleta `02_AFMIS`
 - **KPI** = `KPI (komente)- Menaxhimi i investimeve publike (1).docx`
+- **INTEGR** = `Manual_teknik_Integrimi_i_SPE_me_AFMIS.pdf` — ecuria reale e UI-t të SPE për
+  krijimin e dosjes së tenderit, e lexuar plotësisht këtë sesion (jo vetëm e cituar si burim
+  te PDF-ja fillestare)
 
 ⚠ Të dyja burimet parësore (PDF §1, XLSX fleta `01_Permbledhje`) thonë shprehimisht se
 struktura FIZIKE (ERD, emrat e tabelave, endpoint-et API) nuk është konfirmuar zyrtarisht.
@@ -42,7 +45,7 @@ janë mbajtur si entitete të veçanta sepse burimet i përshkruajnë në granul
 ndryshme, jo sepse duam ndarje artificiale.
 
 Fusha të plota, statusi dhe kodet KPI: shih `schema/afmis/afmis_schema.yaml`.
-**46 fusha gjithsej: 39 CONFIRMED_LOGICAL, 7 ASSUMED** (asnjë ASSUMED nuk është koncept
+**47 fusha gjithsej: 40 CONFIRMED_LOGICAL, 7 ASSUMED** (asnjë ASSUMED nuk është koncept
 biznesi i shpikur — janë vetëm surrogate/FK/vlera teknike të domosdoshme).
 
 ---
@@ -58,7 +61,13 @@ gjithë janë çelësa logjikë (asnjë PK teknik i konfirmuar, siç thekson PDF
 |---|---|---|---|
 | AFMIS → OBP | `kodi_projekti` | E propozuar, PLOTËSIMI I PAKONFIRMUAR | XLSX 09_Celesat r.1.0 |
 | AFMIS → SPE (direkt) | `kodi_projekti` | E propozuar, nëpërmjet OBP | XLSX 09_Celesat r.3.0 |
-| **AFMIS ↔ SIFQ** | **çelës i përbërë**: `viti_fiskal + kodi_institucioni + kodi_programi + kodi_projekti + kodi_llogarie_ekonomike` | Konceptualisht i mbështetur nga PDF/XLSX, POR JO teknikisht i verifikuar si PK (rregulli 5 i kërkesës; PDF §3.9 "no primary key AFMIS/Thesar") | PDF §4.1, §3.9; XLSX 07_SIFQ_Thesar r.3.0; XLSX 09_Celesat r.7.0 |
+| **AFMIS/SIMF → SPE** | `numri_transaksionit` + `kodi_institucioni` | **NGRITUR** nga "e pakonfirmuar" në "aktivisht e validuar në prodhim" — INTEGR tregon ecurinë reale të UI-t: SPE nuk pranon të vazhdojë pa një `numri_transaksionit` me status "Aprovuar" në SIMF/SIFQ, me mesazhe gabimi konkrete kur mungon/gabohet | INTEGR f.3, f.10-13 |
+| **AFMIS ↔ SIFQ** | **çelës i përbërë**: `viti_fiskal + kodi_institucioni + kodi_programi + kodi_projekti + kodi_llogarie_ekonomike` | Konceptualisht i mbështetur nga PDF/XLSX, POR JO teknikisht i verifikuar si PK (rregulli 5 i kërkesës; PDF §3.9 "no primary key AFMIS/Thesar"). Burimet e reja SIFQ (shih `struktura_sifq.md`) konfirmojnë `kodi_projekti`/`kodi_institucioni` si segmente REALE Oracle Flexfield me format konkret — rrit besueshmërinë e FORMATIT, por s'ka ende të dhëna reale AFMIS për verifikim | PDF §4.1, §3.9; XLSX 07_SIFQ_Thesar r.3.0; XLSX 09_Celesat r.7.0; UDHEZ (shih struktura_sifq.md) |
+
+⚠ **Gjetje e re, e rëndësishme:** dokumentacioni i ri (UDHEZ, i lexuar për SIFQ) sugjeron që
+AFMIS/SIMF dhe SIFQ mund të jenë shumë më të lidhura teknikisht — ndoshta e njëjta platformë
+Oracle EBS — sesa supozon ndarja jonë logjike. Shih seksionin përkatës në `struktura_sifq.md`
+për detaje; rregulli 4 (mos i bashko kurrë skemat) vazhdon të zbatohet pavarësisht kësaj.
 
 **Vëmendje kritike (rregulli 5):** AFMIS është në granularitet **buxhet-linjë** (projekt ×
 vit), SIFQ është në granularitet **transaksion** (angazhim/faturë/pagesë). Lidhja SIFQ→AFMIS

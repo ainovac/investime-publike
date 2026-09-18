@@ -58,6 +58,13 @@ investime-publike/
 │   ├── Struktura_te_Dhenave_AFMIS_SIFQ.pdf              (source, both systems)
 │   ├── Investime_Publike_Specifikim_te_dhenash...xlsx   (source, both systems)
 │   ├── KPI (komente)- Menaxhimi i investimeve publike (1).docx  (source, both systems)
+│   ├── Manual_teknik_Integrimi_i_SPE_me_AFMIS.pdf       (source, AFMIS+SIFQ, "INTEGR")
+│   ├── Udhezuesi_SIFQ_Moduli_Buxhetit_UB_Pagueshmeve.docx  (source, SIFQ, "UDHEZ" docx half -
+│   │                                                          the full 263-page/~42MB PDF twin
+│   │                                                          of this same guide is NOT
+│   │                                                          committed, repo-size tradeoff;
+│   │                                                          "UDHEZ PDF p.N" citations in the
+│   │                                                          schema need that original file)
 │   ├── afmis/
 │   │   └── struktura_afmis.md   entities/grain/keys/gaps/open-questions, AFMIS only
 │   └── sifq/
@@ -65,20 +72,27 @@ investime-publike/
 │
 ├── schema/                       machine-readable field inventories, one per system
 │   ├── afmis/
-│   │   └── afmis_schema.yaml    11 entities, 46 fields, full source citation per field
+│   │   └── afmis_schema.yaml    11 entities, 47 fields, full source citation per field
 │   └── sifq/
-│       └── sifq_schema.yaml     5 entities, 40 fields, full source citation per field
+│       └── sifq_schema.yaml     8 entities, 97 fields, full source citation per field
 │
-├── src/                          scripts (scrapers done; generator pending approval)
+├── src/                          scripts (scrapers + generator, all done)
 │   ├── scrape_app_realizations.py   done — produced data/app/app_realizations.csv
 │   ├── scrape_app_parashikime.py    WORKS for page 1 only — see Key findings, pagination
 │   │                                  on this register needs an AJAX call we haven't solved
-│   └── generate_afmis_sifq.py       NOT YET WRITTEN — Step 3, needs your approval first
+│   └── generate_afmis_sifq.py       done — Steps 3+4 complete, see Status below
 │
-└── output/                       generator output, once Step 3 is approved and run
+├── tests/
+│   └── test_generated_data.py    31 pytest checks, all passing
+│
+└── output/                       generator output
     ├── afmis/                    synthetic AFMIS tables (one CSV per entity)
-    └── sifq/                     synthetic SIFQ tables (one CSV per entity)
+    ├── sifq/                     synthetic SIFQ tables (one CSV per entity)
+    └── _truth_links.csv          project->transaction->procedure->contract chain for testing
 ```
+
+Git: pushed to `github.com/ainovac/investime-publike` (private-by-convention, set up before
+this session). `git status` before any destructive command, as always.
 
 Why `data/` is split by *source system* (app/, kpp/) while `docs/`, `schema/`, `output/`
 are split by *target system* (afmis/, sifq/): `data/` holds what we scraped, named after
@@ -119,6 +133,43 @@ where it came from; the other three hold what we're building, named after what i
   further yet. Deprioritized since it wouldn't add real value beyond what Realizimeve/notices
   already give us for the current schema — revisit only if a KPI specifically needs "planned
   but not yet published" investment data (this maps to KPI F5.2/F5.3's denominator).
+
+## Key findings from the 2026-09-18 second session (3 new source docs)
+
+Three new documents were provided: `Manual_teknik_Integrimi_i_SPE_me_AFMIS.pdf` (INTEGR, 13
+pages, the real SPE UI walkthrough for tender-dossier creation), and two copies of the same
+SIFQ user guide - `Udhezuesi i Perdoruesit per BI Qendror formatuar.doc.pdf` (UDHEZ, 263
+pages) and `Moduli Buxhetit, i UB dhe te Pagueshmeve.docx` (same guide, richer since its 22
+tables extract as real structured data where the PDF's tables didn't).
+
+- **SIFQ runs on Oracle E-Business Suite** — UDHEZ names "Oracle", "Flexfield", "GoA PO
+  Commitments" responsibilities directly. Chart of Accounts = 12-segment Accounting
+  Flexfield; real code formats now documented with worked examples (institution codes,
+  project codes, invoice coupon numbers) — see `schema/sifq/sifq_schema.yaml`'s
+  `platform_note`.
+- **`numri_transaksionit` and `kodi_institucioni` are CONFIRMED real, actively-validated
+  production fields**, not just a documentation proposal — INTEGR walks through the actual
+  SPE screen, including the literal error messages shown when they're missing/invalid. This
+  meaningfully upgrades confidence in the AFMIS↔SPE link (still no sample real data, but no
+  longer just "proposed in a spec").
+- **⚠ Important open question, not resolved**: UDHEZ is titled "Sistemi Informatik Financiar
+  i Qeverisë" (SIFQ itself) but documents a full Budget Module (initial detailing +
+  revisions) — functions this project had attributed entirely to AFMIS. INTEGR also
+  describes institutions accessing "SIMF dhe SIFQ" together via one Web Portal. AFMIS/SIMF
+  and SIFQ may be far more tightly coupled — possibly the same Oracle EBS platform under two
+  names — than this project's rule-4 clean separation assumes. Rule 4 is still followed (new
+  `rishikim_buxhetor` entity kept on the SIFQ side, per UDHEZ's own title), but this is a
+  modeling choice under real uncertainty, flagged in both `struktura_sifq.md` and
+  `struktura_afmis.md` — raise with the system owners before treating it as settled.
+- **The real PR→PO→Delivery→Invoice→Payment chain is much richer than what we'd modeled**:
+  a PO (our `angazhim_buxhetor`) cannot be registered without an approved PR
+  (`kerkese_blerje`, a genuinely new entity); one PR can spawn multiple POs but each PO
+  traces to exactly one PR; PO amount is automatically capped at the PR's amount; invoice
+  date cannot precede the contract date; invoices split into linked-to-PO vs. standalone
+  (salaries/utilities); there's a full `leshimi` (delivery/release) entity for phased
+  contracts; and invoice status is really three separate fields (validation status,
+  approval status, accounting status), not the simple pranuar/refuzuar the XLSX spec
+  implied. All added to `schema/sifq/sifq_schema.yaml` (8 entities now, up from 5).
 
 ## Status — all 4 steps done
 
