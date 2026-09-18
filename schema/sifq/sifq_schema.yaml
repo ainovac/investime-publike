@@ -1,0 +1,273 @@
+# SIFQ logical schema — machine-readable companion to docs/sifq/struktura_sifq.md
+# Same conventions as afmis_schema.yaml (status/source/kpi_codes per field).
+#
+# Sources:
+#   PDF  = docs/Struktura_te_Dhenave_AFMIS_SIFQ.pdf
+#   XLSX = docs/Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx, sheet 07_SIFQ_Thesar
+#   KPI  = docs/KPI (komente)- Menaxhimi i investimeve publike (1).docx
+
+system: SIFQ
+grain_note: >
+  SIFQ is at TRANSACTION grain (one row per commitment / invoice / payment), not
+  budget-line grain like AFMIS. This is the grain difference the task's rule 5 requires
+  the AFMIS<->SIFQ link to account for - see external_link_keys below.
+
+entities:
+
+  - name: angazhim_buxhetor
+    description_sq: "Angazhimi buxhetor (bllokim/rezervim fondesh kundrejt planit të Thesarit)"
+    grain: "one row per budget commitment"
+    primary_key: [numri_angazhimit]
+    fields:
+      - name: numri_angazhimit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 1.0: 'Numri i angazhimit buxhetor ... Identifikuesi i entitetit' (link key = PO); PDF §3.5 'Angazhimi financiar', Çelësi: 'Kodi projektit + dokumenti financiar' (composite, see note)"
+        kpi_codes: ["F4.2"]
+      - name: numri_kontrates
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 2.0: 'Numri i kontratës ... Çelësi SIFQ-SMK-SPE' (link key = PO)"
+        kpi_codes: ["F4.2", "F4.3"]
+      - name: kodi_projekti
+        type: string (FK -> AFMIS.projekt_investimi.kodi_projekti)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 3.0: 'Kodi i projektit të investimit / llogaria ekonomike (230-231) ... Çelësi SIFQ-AFMIS' (link key = PO); PDF §3.4 'Projekti: lidhet me kodin e projektit në AFMIS'"
+        kpi_codes: ["F4.3"]
+      - name: kodi_llogarie_ekonomike
+        type: string (230 or 231)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 3.0, same cell, 'llogaria ekonomike (230-231)'"
+        kpi_codes: ["F4.3"]
+      - name: kodi_institucioni
+        type: string (FK -> AFMIS.institucioni.kodi_institucioni)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 4.0: 'Institucioni ... Grupimi' (link key = PO); PDF §3.4 'Institucioni: Njësia buxhetore që kryen transaksionin'"
+        kpi_codes: ["F4.3"]
+      - name: nipt_perfituesit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 5.0: 'NIPT i përfituesit ... Çelësi universal' (link key = PO)"
+        kpi_codes: ["F4.2", "F4.3"]
+      - name: vlera_angazhuar
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 6.0: 'Vlera e angazhuar ... Krahasimi angazhim kundrejt pagesë'"
+        kpi_codes: ["F4.2"]
+      - name: statusi_aprovuar
+        type: enum [Po, Jo]
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.6/§3.7: 'Statusi Aprovuar ... Konfirmon disponueshmërinë e fondeve buxhetore'"
+        kpi_codes: []
+      - name: periudha_muaji
+        type: integer
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4: 'Periudha kontabël: Muaji/viti fiskal i regjistrimit'"
+        kpi_codes: []
+      - name: periudha_viti
+        type: integer
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4, same cell"
+        kpi_codes: []
+      - name: kodi_ministrie_linje
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Ministria e linjës'; PDF §3.2.ii 'Kodet e ministrive të linjës'"
+        kpi_codes: []
+      - name: kodi_kapitulli
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Kapitulli'; PDF §3.2.iii 'Kodi i kapitullit'"
+        kpi_codes: []
+      - name: kodi_programi
+        type: string (FK -> AFMIS.programi_buxhetor.kodi_programi)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Programi'; PDF §3.2.iv"
+        kpi_codes: []
+      - name: kodi_entitet_qeverises
+        type: string (qendrore/vendore/SHA)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Entiteti qeverisës: Niveli i qeverisjes (qendrore/vendore/SHA)'; PDF §3.2.vi"
+        kpi_codes: []
+      - name: kodi_thesar_dege
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Thesari: Dega e thesarit që procedon transaksionin'"
+        kpi_codes: []
+      - name: kodi_tip_buxheti
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Tipi i buxhetit: Klasifikim i llojit të fondit/burimit buxhetor'"
+        kpi_codes: []
+
+  - name: fature
+    description_sq: "Fatura — dokumenti që kërkon pagesë"
+    grain: "one row per invoice"
+    primary_key: [numri_fatures]
+    fields:
+      - name: numri_fatures
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 7.0: 'Numri i faturës ... Identifikuesi i faturës' (link key = PO)"
+        kpi_codes: ["F4.2", "F4.4"]
+      - name: numri_angazhimit
+        type: string (FK -> angazhim_buxhetor.numri_angazhimit)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.5 'Fatura', Çelësi: 'ID e dokumentit financiar + Kodi institucionit/projektit' (realized here via the commitment FK, since XLSX doesn't separately name a 'dokumenti financiar' id for this entity)"
+        kpi_codes: []
+      - name: nivf_nslf
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 8.0: 'NIVF / NSLF (identifikuesit e fiskalizimit) ... KPI F4.2 dhe F4.3 mbështeten te faturat e fiskalizuara. Ky është identifikuesi i sigurt.'"
+        kpi_codes: ["F4.2", "F4.3"]
+      - name: data_fatures
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 9.0: 'Data e faturës ... Fillimi i afatit 30-ditor sipas ligjit 48/2016'"
+        kpi_codes: ["F4.4"]
+      - name: data_mberritjes_regjistrimit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 10.0: 'Data e mbërritjes / regjistrimit ... Fillimi alternativ i afatit — duhet konfirmuar cila përdoret'"
+        kpi_codes: ["F4.4"]
+        open_question: "Which date starts the Law 48/2016 30-day clock - data_fatures or this one? XLSX itself flags this as unresolved."
+      - name: vlera_fatures
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 11.0: 'Vlera e faturës ... Numëruesi i KPI F4.2'"
+        kpi_codes: ["F4.2"]
+      - name: statusi
+        type: enum [pranuar, refuzuar]
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 12.0: 'Statusi i faturës ... Pranuar/refuzuar. KPI F4.2 kërkon shprehimisht statusin e verifikuar në SIFQ'; PDF §3.5 'me status pranuar/refuzuar'"
+        kpi_codes: ["F4.2"]
+      - name: data_ndryshimit_statusit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 13.0: 'Data e ndryshimit të statusit ... Matja e kohës së verifikimit'"
+        kpi_codes: ["F4.4"]
+      - name: arsyeja_refuzimit
+        type: text
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 14.0: 'Arsyeja e refuzimit' (NICE-TO-HAVE)"
+        kpi_codes: ["F4.4"]
+      - name: furnitor_nipt
+        type: string (FK -> Supplier)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Supplier (Furnitori): Subjekti furnizues, i lidhur me NIPT nga DPT'"
+        kpi_codes: []
+      - name: kodi_lloj_fature
+        type: string (mall/sherbim/pune)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.4 'Fatura sipas lloji: Kategorizimi i faturës (mall/shërbim/punë etj.)'"
+        kpi_codes: []
+
+  - name: pagese
+    description_sq: "Pagesa — ekzekutimi real i pagesës nga Thesari"
+    grain: "one row per payment order"
+    primary_key: [numri_urdherit_shpenzimit]
+    fields:
+      - name: numri_urdherit_shpenzimit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 15.0: 'Numri i urdhërit të shpenzimit ... Gjurma e pagesës'"
+        kpi_codes: ["F4.3"]
+      - name: numri_fatures
+        type: string (FK -> fature.numri_fatures)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.5 'Urdhër-shpenzimi / Pagesa', Çelësi: 'ID pagesë + ID faturë'"
+        kpi_codes: []
+      - name: data_urdherit_shpenzimit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 16.0: 'Data e urdhërit të shpenzimit ... Segmenti para thesarit'"
+        kpi_codes: ["F4.4"]
+      - name: data_ekzekutimit_pageses
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 17.0: 'Data e ekzekutimit të pagesës nga thesari ... KPI F4.3 kërkon pagesat e kryera faktikisht, jo thjesht të urdhëruara'; PDF §3.5 lifecycle step 5 'Disbursimi real (regjistrohet data e pagesës)'"
+        kpi_codes: ["F4.3", "F4.4"]
+      - name: vlera_paguar_faktikisht
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 18.0: 'Vlera e paguar faktikisht ... Numëruesi i KPI F4.3'"
+        kpi_codes: ["F4.3"]
+      - name: afati_aplikueshem_dite
+        type: integer (days)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 07_SIFQ_Thesar row 19.0: 'Afati i aplikueshëm i pagesës (ditë) ... 30 ditë sipas ligjit 48/2016, ose afati kontraktor nëse ndryshon'"
+        kpi_codes: ["F4.4"]
+
+  - name: dokument_shpenzimi
+    description_sq: "Dokumenti i shpenzimit — regjistrimi fillestar i një angazhimi/pagese (PDF-only entity; XLSX does not separately name this, treating angazhim_buxhetor as the primary transactional record)"
+    grain: "one row per expenditure document"
+    primary_key: [id_dokumenti_financiar]
+    fields:
+      - name: id_dokumenti_financiar
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.5 table, row 'Dokumenti i shpenzimit', Çelësi: 'ID dokumenti financiar'"
+        kpi_codes: []
+      - name: statusi
+        type: enum [regjistruar]
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.5 lifecycle step 1: 'Regjistrimi i faturës/dokumentit të shpenzimit'"
+        kpi_codes: []
+
+  - name: furnitor
+    description_sq: "Furnitori / Supplier"
+    grain: "one row per supplier (by NIPT)"
+    primary_key: [nipt]
+    fields:
+      - name: nipt
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.3: 'Të dhëna tatimore (nga DPT): NIPT dhe të dhëna identifikuese të subjektit/institucionit'"
+        kpi_codes: []
+      - name: emertimi
+        type: string
+        status: ASSUMED
+        source: "Structural: a supplier record needs a name; PDF names NIPT as the identifying field only"
+        kpi_codes: []
+      - name: iban
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.3: 'Të dhëna bankare (niveli 2): IBAN, numri i llogarisë bankare, adresa e bankës'"
+        kpi_codes: []
+      - name: numri_llogarise_bankare
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.3, same cell"
+        kpi_codes: []
+      - name: adresa_bankes
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §3.3, same cell"
+        kpi_codes: []
+
+# ---------------------------------------------------------------------------
+# Link keys to other systems
+# ---------------------------------------------------------------------------
+external_link_keys:
+  - name: sifq_to_afmis_composite
+    fields: [periudha_viti, kodi_institucioni, kodi_programi, kodi_projekti, kodi_llogarie_ekonomike]
+    source: >
+      Task rule 5 mandate. Grounded in: PDF §3.9 ("no primary key AFMIS/Thesar", meeting
+      28.07.2026), PDF §4.1 (kodi_institucioni, kodi_projekti as conceptual shared keys),
+      XLSX 07_SIFQ_Thesar row 3.0 ("Kodi i projektit / llogaria ekonomike (230-231) ...
+      Çelësi SIFQ-AFMIS"), XLSX 09_Celesat row 7.0 ("SIFQ -> AFMIS | Kodi i projektit/
+      llogaria ekonomike 230-231 | fallback: Institucion + program buxhetor + vit").
+    status: CONFIRMED_LOGICAL_AS_COMPOSITE_NOT_AS_PK
+    grain_warning: >
+      SIFQ (angazhim_buxhetor) is at transaction grain; AFMIS (vlera_buxhetore_projekti) is
+      at project-year grain. Joining requires aggregating SIFQ transactions up to
+      (kodi_projekti, viti) before comparing to an AFMIS budget-line row - a 1:many
+      relationship, not 1:1.
+  - name: sifq_to_smk_spe
+    fields: [numri_kontrates]
+    source: "XLSX 07_SIFQ_Thesar row 2.0 'Çelësi SIFQ-SMK-SPE'; XLSX 09_Celesat row 6.0: 'SMK -> SIFQ | Numri i kontratës | fallback: NIPT i kontraktorit + numri i angazhimit'"
+    status: NOT_CONFIRMED_FILLED
+  - name: universal_nipt
+    fields: [nipt_perfituesit / furnitor.nipt]
+    source: "XLSX 09_Celesat row 9.0: 'Universal | NIPT — i pranishëm në SPE, SMK, SIFQ, DPT, AKPA'"
+    status: NOT_CONFIRMED_FILLED

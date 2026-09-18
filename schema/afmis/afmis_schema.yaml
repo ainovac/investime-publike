@@ -1,0 +1,349 @@
+# AFMIS logical schema — machine-readable companion to docs/afmis/struktura_afmis.md
+#
+# Every field carries:
+#   status: CONFIRMED_LOGICAL (named/described in a source doc) | ASSUMED (format/type we chose)
+#   source: exact document + section/sheet/row + quoted wording
+#   kpi_codes: KPI codes (F1.1 ...) that the sources say depend on this field.
+#              "ALL" means the source literally wrote "Të gjitha" without enumerating.
+#
+# Sources:
+#   PDF  = docs/Struktura_te_Dhenave_AFMIS_SIFQ.pdf
+#   XLSX = docs/Investime_Publike_Specifikim_te_dhenash_per_ekstraktim_v1.xlsx, sheet 02_AFMIS
+#   KPI  = docs/KPI (komente)- Menaxhimi i investimeve publike (1).docx
+
+system: AFMIS
+grain_note: >
+  Two grains coexist and are NOT merged: institucioni/programi/projekti/produkti/tavani/
+  deklarata/emp/roli/zeri_ekonomik are PDF §2.3-derived, budget-planning grain (one row
+  per project / per program-year / per program). kerkesa_obp is XLSX-derived, one row per
+  AFMIS->OBP purchase-request handoff.
+
+entities:
+
+  - name: institucioni
+    description_sq: "Institucioni / NJQQ (Njësia e Qeverisjes Qendrore që administron buxhetin)"
+    grain: "one row per budget institution"
+    primary_key: [kodi_institucioni]
+    fields:
+      - name: kodi_institucioni
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'Institucioni / NJQQ', Çelësi column: 'Kodi i institucionit'"
+        kpi_codes: ["ALL"]
+      - name: emertimi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 4.0: 'Emri i institucionit' / 'Paraqitja në dashboard'"
+        kpi_codes: ["ALL"]
+
+  - name: programi_buxhetor
+    description_sq: "Programi buxhetor (struktura funksionale nën të cilën organizohet buxheti)"
+    grain: "one row per budget program"
+    primary_key: [kodi_programi]
+    fields:
+      - name: kodi_programi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'Programi buxhetor', Çelësi: 'Kodi i programit'"
+        kpi_codes: ["F1.1"]
+      - name: emertimi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.4: 'Emërtimet dhe kodet e programeve buxhetore'; XLSX 02_AFMIS row 7.0 'Programi buxhetor' (NICE-TO-HAVE, F1.1)"
+        kpi_codes: ["F1.1"]
+      - name: kodi_institucioni
+        type: string (FK -> institucioni.kodi_institucioni)
+        status: ASSUMED
+        source: "Structural: PDF §2.3 describes program as organized within budget structure; no source states 1 program = 1 institution, so this FK is our modeling choice, not document-confirmed"
+        kpi_codes: []
+
+  - name: projekt_investimi
+    description_sq: "Projekti i investimit (investimi publik i planifikuar/ekzekutuar)"
+    grain: "one row per investment project"
+    primary_key: [kodi_projekti]
+    fields:
+      - name: kodi_projekti
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'Projekti i investimit', Çelësi: 'Kodi i projektit'; XLSX 02_AFMIS row 1.0: 'Kodi i projektit të investimit ... kandidati kryesor për çelësin që lidh AFMIS me OBP dhe SPE' (link key = PO)"
+        kpi_codes: ["ALL"]
+      - name: emertimi
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 2.0: 'Emri / objekti i investimit ... përdoret edhe për lidhje probabilistike kur kodi mungon'"
+        kpi_codes: ["F1.1", "F5.2"]
+      - name: kodi_institucioni
+        type: string (FK -> institucioni.kodi_institucioni)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 'Kodi i projektit' entity row (institution grouping implied by NJQQ admin); XLSX 02_AFMIS row 3.0: 'Kodi i institucionit (autoriteti kontraktor)' (link key = PO)"
+        kpi_codes: ["ALL"]
+      - name: kodi_programi
+        type: string (FK -> programi_buxhetor.kodi_programi)
+        status: CONFIRMED_LOGICAL
+        source: >
+          XLSX 02_AFMIS row 7.0: 'Programi buxhetor' (NICE-TO-HAVE, F1.1) - this is the
+          ONLY source for a direct projekt->program link. PDF §2.3 only nests PRODUKTI
+          under the program ('brenda programit buxhetor'); it does not state the project
+          itself carries a program code (see docs/afmis/struktura_afmis.md open question #3)
+        kpi_codes: ["F1.1"]
+      - name: viti_fiskal
+        type: integer
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 5.0: 'Viti fiskal ... Filtrimi i periudhës'"
+        kpi_codes: ["ALL"]
+      - name: kodi_llogarie_ekonomike
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 6.0: 'Kodi i llogarisë ekonomike ... për të izoluar investimet (230/231)'; PDF §2.3 'Zërat ekonomikë 230-231'"
+        kpi_codes: ["F1.1"]
+      - name: burimi_i_financimit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 8.0: 'Burimi i financimit ... Ndarja buxhet i shtetit / huamarrje / donator' (NICE-TO-HAVE)"
+        kpi_codes: ["F1.1"]
+
+  - name: vlera_buxhetore_projekti
+    description_sq: "Vlerat buxhetore të projektit (planifikuar / miratuar / disbursuar, TVSH, datat e miratimit)"
+    grain: "one row per project per fiscal year (revisable over time)"
+    primary_key: [kodi_projekti, viti_fiskal]
+    note: >
+      Distinct from PDF §2.3's program-level 'Tavani buxhetor' entity (different grain:
+      project vs program). Kept as a separate entity rather than merged, since the two
+      sources describe different things at different grains.
+    fields:
+      - name: kodi_projekti
+        type: string (FK -> projekt_investimi.kodi_projekti)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS, entity header 'ENTITETI: Vlerat buxhetore' nested under project context"
+        kpi_codes: []
+      - name: viti_fiskal
+        type: integer
+        status: ASSUMED
+        source: "Structural: budget values are revised per year per PDF §2.3 tavan concept; XLSX doesn't explicitly restate viti_fiskal inside this entity block but it's listed once at project level (row 5.0) and values are described as revisable (row 14.0)"
+        kpi_codes: []
+      - name: vlera_planifikuar_fillestare
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 9.0: 'Vlera e planifikuar fillestare (lekë) ... Baza e krahasimit për eficiencën e planifikimit'"
+        kpi_codes: ["F5.1"]
+      - name: vlera_miratuar_aktuale
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 10.0: 'Vlera e miratuar aktuale (lekë) ... Vlera në fuqi pas rishikimeve. Emëruesi i KPI F1.2 dhe F5.1'"
+        kpi_codes: ["F1.1", "F1.2", "F5.1"]
+      - name: perfshin_tvsh
+        type: boolean (or TVSH rate)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 11.0: 'A është me TVSH (Po/Jo) ose norma e TVSH ... KPI F5.1 kërkon zbritjen e TVSH-së para krahasimit me fondin limit të SPE'; corroborated PDF §3.9: 'Vlera buxhetore në AFMIS përfshin TVSH-në'"
+        kpi_codes: ["F5.1"]
+      - name: vlera_disbursuar
+        type: numeric (Lekë)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 12.0: 'Vlera e disbursuar / realizuar (lekë)' (NICE-TO-HAVE)"
+        kpi_codes: ["F4.3"]
+      - name: data_miratimit_buxhetit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 13.0: 'Data e miratimit të buxhetit ... Fillimi i orës për fazën 1'"
+        kpi_codes: ["F1.3"]
+      - name: data_rishikimit_fundit
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 14.0: 'Data e rishikimit të fundit ... Ndjekja e ndryshimeve buxhetore' (NICE-TO-HAVE)"
+        kpi_codes: ["F5.1"]
+
+  - name: kerkesa_obp
+    description_sq: "Lidhja me prokurimin — kërkesa e dërguar drejt OBP nga AFMIS"
+    grain: "one row per purchase-request handoff from AFMIS to OBP"
+    primary_key: [kodi_projekti, referenca_kerkeses_obp]
+    fields:
+      - name: kodi_projekti
+        type: string (FK -> projekt_investimi.kodi_projekti)
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS, entity 'ENTITETI: Lidhja me prokurimin'"
+        kpi_codes: []
+      - name: referenca_kerkeses_obp
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 15.0: 'Referenca e kërkesës drejt OBP ... Çelësi që lidh planifikimin me prokurimin' (link key = PO)"
+        kpi_codes: ["F1.3"]
+      - name: statusi_kerkeses
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 16.0: 'Statusi i kërkesës drejt OBP ... KPI F1.3: sa % e buxhetit ka kaluar në OBP'"
+        kpi_codes: ["F1.3"]
+      - name: data_dergimit_kerkeses
+        type: date
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 17.0: 'Data e dërgimit të kërkesës në OBP ... Matja e kohës së fazës 1'"
+        kpi_codes: ["F1.3"]
+      - name: numri_procedures_prokurimit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "XLSX 02_AFMIS row 18.0: 'Numri i procedurës së prokurimit (nëse ruhet në AFMIS) ... Nëse ekziston, lidhja AFMIS-SPE është e drejtpërdrejtë' (link key = PO)"
+        kpi_codes: ["F1.2", "F5.2"]
+
+  - name: tavan_buxhetor
+    description_sq: "Tavani buxhetor (kufiri i shpenzimeve për program-vit, indikativ ose i pandryshueshëm)"
+    grain: "one row per program per fiscal year per lloji"
+    primary_key: [kodi_programi, viti, lloji]
+    fields:
+      - name: kodi_programi
+        type: string (FK -> programi_buxhetor.kodi_programi)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'Tavani buxhetor', Çelësi: 'Kodi i programit + viti'"
+        kpi_codes: []
+      - name: viti
+        type: integer
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3, same row"
+        kpi_codes: []
+      - name: lloji
+        type: enum [indikativ, i_pandryshueshem]
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3: 'llojet: indikativ (fazë strategjike) / i pandryshueshëm (fazë teknike)'"
+        kpi_codes: []
+      - name: vlera
+        type: numeric
+        status: ASSUMED
+        source: "Structural: a 'tavan' (ceiling) implies a monetary amount; PDF names the concept, not a column label"
+        kpi_codes: []
+
+  - name: deklarata_politikes_programit
+    description_sq: "Deklarata e Politikës së Programit (qëllimet, objektivat)"
+    grain: "one row per program"
+    primary_key: [kodi_programi]
+    fields:
+      - name: kodi_programi
+        type: string (FK -> programi_buxhetor.kodi_programi)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'Deklarata e Politikës së Programit', Çelësi: 'Kodi i programit'"
+        kpi_codes: []
+      - name: qellimet
+        type: text
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3: 'Qëllimet, objektivat dhe treguesit e performancës'"
+        kpi_codes: []
+      - name: objektivat
+        type: text
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3, same cell"
+        kpi_codes: []
+
+  - name: tregues_performance
+    description_sq: "Treguesit e performancës (nivel qëllim/objektiv) të një programi"
+    grain: "one row per indicator per program"
+    primary_key: [id_treguesi]
+    fields:
+      - name: id_treguesi
+        type: string (surrogate)
+        status: ASSUMED
+        source: "Structural surrogate key; PDF composite is program + indicator name only"
+        kpi_codes: []
+      - name: kodi_programi
+        type: string (FK -> deklarata_politikes_programit.kodi_programi)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3: 'treguesit e performancës (nivel impakt/rezultat)'"
+        kpi_codes: []
+      - name: niveli
+        type: enum [qellim, objektiv]
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 'nivel impakt/rezultat'; PDF §2.4 'nivel qëllimi dhe objektivi'"
+        kpi_codes: []
+      - name: emertimi_treguesit
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3: 'treguesit e performancës'"
+        kpi_codes: []
+      - name: vlera_e_synuar
+        type: numeric
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.5, role 'Anëtari i EMP': 'plotëson vlerat e synuara për treguesit e performancës'"
+        kpi_codes: []
+
+  - name: emp_anetar
+    description_sq: "EMP — Ekipi i Menaxhimit të Programit (anëtarësia)"
+    grain: "one row per (program, user)"
+    primary_key: [kodi_programi, id_perdoruesi]
+    fields:
+      - name: kodi_programi
+        type: string (FK -> programi_buxhetor.kodi_programi)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'EMP', Çelësi: 'ID e programit + anëtarët'"
+        kpi_codes: []
+      - name: id_perdoruesi
+        type: string
+        status: ASSUMED
+        source: "PDF names 'anëtarët' as part of the composite key but not a column format"
+        kpi_codes: []
+      - name: roli
+        type: enum [Drejtues_EMP, Anetar_EMP]
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.5 role table rows 'Drejtuesi i EMP' / 'Anëtari i EMP'"
+        kpi_codes: []
+
+  - name: roli_perdoruesi
+    description_sq: "Rolet e përdoruesve dhe përgjegjësitë (lookup statik, jo për t'u gjeneruar rastësisht)"
+    grain: "one row per role (5 fixed rows per PDF §2.5)"
+    primary_key: [roli]
+    fields:
+      - name: roli
+        type: string
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.5 role table"
+        kpi_codes: []
+      - name: pergjegjesia
+        type: text
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.5 role table, 'Përgjegjësia kryesore' column"
+        kpi_codes: []
+
+  - name: zeri_ekonomik_230_231
+    description_sq: "Zërat ekonomikë 230-231 (klasifikimi i shpenzimeve kapitale/investimeve)"
+    grain: "one row per (economic item 230/231, project, year)"
+    primary_key: [kodi_zeri_ekonomik, kodi_projekti, viti]
+    fields:
+      - name: kodi_zeri_ekonomik
+        type: string (230 or 231)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3 table, row 'Zërat ekonomikë 230-231', Çelësi: 'Kodi i zërit ekonomik'"
+        kpi_codes: ["F1.1"]
+      - name: kodi_projekti
+        type: string (FK -> projekt_investimi.kodi_projekti)
+        status: CONFIRMED_LOGICAL
+        source: "PDF §2.3, same row, '+ Kodi projektit'"
+        kpi_codes: ["F1.1"]
+      - name: viti
+        type: integer
+        status: ASSUMED
+        source: "Structural: a yearly capital-expenditure classification needs a fiscal year; not a named column in PDF"
+        kpi_codes: []
+      - name: vlera
+        type: numeric
+        status: ASSUMED
+        source: "Structural: PDF names the classification concept ('Klasifikimi i shpenzimeve kapitale'), not a value column"
+        kpi_codes: []
+
+# ---------------------------------------------------------------------------
+# Link keys to other systems (see docs/afmis/struktura_afmis.md "Keys" section for the
+# composite AFMIS<->SIFQ key mandated by the task's rule 5)
+# ---------------------------------------------------------------------------
+external_link_keys:
+  - name: afmis_to_obp
+    fields: [kodi_projekti]
+    source: "XLSX 09_Celesat row 1.0: 'AFMIS -> OBP | Kodi i projektit të investimit | (fallback) Institucion + objekt + vit fiskal'"
+    status: NOT_CONFIRMED_FILLED
+    note: "09_Celesat sheet leaves the 'A ekziston?' / fill-rate columns blank - existence of the key is proposed, not verified filled"
+  - name: afmis_to_spe_direct
+    fields: [kodi_projekti]
+    source: "XLSX 09_Celesat row 3.0: 'AFMIS -> APP/SPE (direkt) | Kodi i projektit i bartur në SPE | Nëpërmjet OBP (lidhjet 1+2)'"
+    status: NOT_CONFIRMED_FILLED
+  - name: afmis_to_sifq_composite
+    fields: [viti_fiskal, kodi_institucioni, kodi_programi, kodi_projekti, kodi_llogarie_ekonomike]
+    source: >
+      Task rule 5 (no confirmed technical PK between AFMIS/SIFQ - PDF §3.9, §4.1); composite
+      built from PDF §4.1's two conceptual shared keys (kodi_institucioni, kodi_projekti) plus
+      XLSX 07_SIFQ_Thesar row 3.0 ('Kodi i projektit / llogaria ekonomike 230-231 ... Çelësi
+      SIFQ-AFMIS') plus XLSX 09_Celesat row 7.0 ('SIFQ -> AFMIS | Kodi i projektit/llogaria
+      ekonomike 230-231 | fallback: Institucion + program buxhetor + vit')
+    status: CONFIRMED_LOGICAL_AS_COMPOSITE_NOT_AS_PK
